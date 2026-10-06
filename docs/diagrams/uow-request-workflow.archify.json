@@ -1,0 +1,333 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "BusinessAnalytics — Request Workflow (Unit of Work)",
+    "quality_profile": "showcase",
+    "output": ".archify/workflow-uow-request-20261006-085911/uow-request-workflow.html",
+    "legend": {
+      "entries": {
+        "frontend": {
+          "label": "HTTP response"
+        },
+        "backend": {
+          "label": "API / Service / UoW"
+        },
+        "security": {
+          "label": "Validation / business rule"
+        },
+        "messagebus": {
+          "label": "Transaction control"
+        },
+        "database": {
+          "label": "PostgreSQL write"
+        },
+        "external": {
+          "label": "Client / error response"
+        }
+      }
+    }
+  },
+  "lanes": [
+    {
+      "id": "client",
+      "label": "Client"
+    },
+    {
+      "id": "api",
+      "label": "API Layer"
+    },
+    {
+      "id": "app",
+      "label": "Application · Service + UoW"
+    },
+    {
+      "id": "db",
+      "label": "Infrastructure · PostgreSQL"
+    },
+    {
+      "id": "failure",
+      "label": "Rollback & Error",
+      "variant": "exception"
+    }
+  ],
+  "phases": [
+    {
+      "id": "intake",
+      "label": "รับ request + validate",
+      "fromCol": 0,
+      "toCol": 1
+    },
+    {
+      "id": "transaction",
+      "label": "Transaction เดียว (BEGIN → COMMIT)",
+      "fromCol": 2,
+      "toCol": 5,
+      "variant": "emphasis"
+    }
+  ],
+  "groups": [
+    {
+      "id": "uow_scope",
+      "label": "ExecuteInTransactionAsync",
+      "lane": "app",
+      "fromCol": 2,
+      "toCol": 5,
+      "variant": "emphasis"
+    },
+    {
+      "id": "session_scope",
+      "label": "DbSession: 1 connection + 1 tx",
+      "lane": "db",
+      "fromCol": 4,
+      "toCol": 5,
+      "variant": "dashed"
+    }
+  ],
+  "mainPath": [
+    "request",
+    "controller",
+    "validate",
+    "begin",
+    "rules",
+    "write",
+    "audit",
+    "commit",
+    "created"
+  ],
+  "nodes": [
+    {
+      "id": "request",
+      "lane": "client",
+      "col": 0,
+      "type": "external",
+      "label": "Client",
+      "sublabel": "POST /api/tasks",
+      "width": 172
+    },
+    {
+      "id": "created",
+      "lane": "client",
+      "col": 5,
+      "type": "frontend",
+      "label": "201 Created",
+      "sublabel": "TaskDto",
+      "width": 172
+    },
+    {
+      "id": "controller",
+      "lane": "api",
+      "col": 0,
+      "type": "backend",
+      "label": "TasksController",
+      "sublabel": "[ApiController]",
+      "width": 172
+    },
+    {
+      "id": "validate",
+      "lane": "app",
+      "col": 1,
+      "type": "security",
+      "label": "FluentValidation",
+      "sublabel": "ก่อนเปิด transaction",
+      "width": 172
+    },
+    {
+      "id": "begin",
+      "lane": "app",
+      "col": 2,
+      "type": "backend",
+      "label": "BEGIN",
+      "sublabel": "uow.BeginTransaction",
+      "width": 172
+    },
+    {
+      "id": "rules",
+      "lane": "app",
+      "col": 3,
+      "type": "security",
+      "label": "Business rules",
+      "sublabel": "project เปิด / user active",
+      "width": 172
+    },
+    {
+      "id": "commit",
+      "lane": "app",
+      "col": 5,
+      "type": "backend",
+      "label": "COMMIT",
+      "sublabel": "ข้อมูล + log พร้อมกัน",
+      "width": 172
+    },
+    {
+      "id": "write",
+      "lane": "db",
+      "col": 4,
+      "type": "database",
+      "label": "TaskRepository",
+      "sublabel": "INSERT tasks (Dapper)",
+      "width": 172
+    },
+    {
+      "id": "audit",
+      "lane": "db",
+      "col": 5,
+      "type": "database",
+      "label": "system_logs",
+      "sublabel": "INSERT audit (tx เดิม)",
+      "width": 172
+    },
+    {
+      "id": "rollback",
+      "lane": "failure",
+      "col": 3,
+      "type": "messagebus",
+      "label": "ROLLBACK",
+      "sublabel": "ไม่มีข้อมูลค้าง",
+      "width": 172
+    },
+    {
+      "id": "handler",
+      "lane": "failure",
+      "col": 4,
+      "type": "backend",
+      "label": "GlobalExceptionHandler",
+      "sublabel": "IExceptionHandler",
+      "width": 172
+    },
+    {
+      "id": "problem",
+      "lane": "failure",
+      "col": 5,
+      "type": "external",
+      "label": "ProblemDetails",
+      "sublabel": "400/404/409/422/503",
+      "width": 172
+    },
+    {
+      "id": "badrequest",
+      "lane": "failure",
+      "col": 1,
+      "type": "external",
+      "label": "400 Bad Request",
+      "sublabel": "ValidationProblemDetails",
+      "width": 172
+    }
+  ],
+  "edges": [
+    {
+      "id": "send",
+      "from": "request",
+      "to": "controller"
+    },
+    {
+      "id": "to-service",
+      "from": "controller",
+      "to": "validate"
+    },
+    {
+      "id": "valid",
+      "from": "validate",
+      "to": "begin",
+      "label": "valid",
+      "variant": "emphasis"
+    },
+    {
+      "id": "check",
+      "from": "begin",
+      "to": "rules"
+    },
+    {
+      "id": "rules-pass",
+      "from": "rules",
+      "to": "write",
+      "label": "ผ่าน",
+      "variant": "emphasis"
+    },
+    {
+      "id": "log-same-tx",
+      "from": "write",
+      "to": "audit",
+      "label": "same tx"
+    },
+    {
+      "id": "all-written",
+      "from": "audit",
+      "to": "commit",
+      "variant": "emphasis"
+    },
+    {
+      "id": "respond",
+      "from": "commit",
+      "to": "created",
+      "variant": "emphasis"
+    },
+    {
+      "id": "rules-fail",
+      "from": "rules",
+      "to": "rollback",
+      "label": "ไม่ผ่าน",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "db-fail",
+      "from": "write",
+      "to": "rollback",
+      "label": "DB error",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "rethrow",
+      "from": "rollback",
+      "to": "handler",
+      "label": "throw",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "invalid",
+      "from": "validate",
+      "to": "badrequest",
+      "label": "invalid",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "to-problem",
+      "from": "handler",
+      "to": "problem",
+      "variant": "security",
+      "role": "error"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Unit of Work",
+      "items": [
+        "DbSession (scoped) ให้ทุก repository ใช้ connection + transaction เดียวกัน",
+        "สำเร็จ → COMMIT, exception → ROLLBACK (ใช้ CancellationToken.None)",
+        "เรียกซ้อน (nested) จะ join transaction เดิม"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Audit ใน transaction เดียวกัน",
+      "items": [
+        "ทุกการเขียนบันทึก system_logs ก่อน COMMIT",
+        "ถ้า rollback, log ก็หายไปด้วย จึงตรงกับข้อมูลจริงเสมอ"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Error → HTTP status",
+      "items": [
+        "ValidationException → 400 · NotFound → 404",
+        "Conflict / unique violation → 409 · BusinessRule → 422",
+        "DB ต่อไม่ได้ → 503 · อื่นๆ → 500"
+      ]
+    }
+  ]
+}

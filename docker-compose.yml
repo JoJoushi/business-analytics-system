@@ -1,0 +1,72 @@
+name: business-analytics
+
+x-logging: &default-logging
+  # Docker-level log rotation: max 3 x 10 MB per container
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: ba-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-business_analytics}
+      POSTGRES_USER: ${POSTGRES_USER:-analytics}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-analytics_pw}
+      TZ: Asia/Bangkok
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data          # persistent data
+      - ./db/init:/docker-entrypoint-initdb.d:ro # schema + seed, run once on empty volume
+      - ./backups:/backups                       # pg_dump output (see scripts/backup.sh)
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks: [backend]
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: business-analytics-api:latest
+    container_name: ba-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
+      ConnectionStrings__Default: "Host=db;Port=5432;Database=${POSTGRES_DB:-business_analytics};Username=${POSTGRES_USER:-analytics};Password=${POSTGRES_PASSWORD:-analytics_pw};Pooling=true;Maximum Pool Size=50"
+      Swagger__Enabled: "true"
+      TZ: Asia/Bangkok
+    ports:
+      - "${API_PORT:-8080}:8080"
+    networks: [backend]
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 256M
+
+volumes:
+  pgdata:
+    name: ba-pgdata
+
+networks:
+  backend:
+    name: ba-backend
+    driver: bridge

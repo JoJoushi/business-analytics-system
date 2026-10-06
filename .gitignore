@@ -1,0 +1,14 @@
+bin/
+obj/
+.vs/
+.vscode/
+.idea/
+*.user
+.env
+.DS_Store
+backups/*
+!backups/.gitkeep
+logs/*
+!logs/.gitkeep
+TestResults/
+.archify/
